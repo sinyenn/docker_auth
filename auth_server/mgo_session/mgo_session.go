@@ -18,8 +18,11 @@ package mgo_session
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"strings"
 	"time"
@@ -33,6 +36,7 @@ type Config struct {
 	DialInfo     mgo.DialInfo `yaml:",inline"`
 	PasswordFile string       `yaml:"password_file,omitempty"`
 	EnableTLS    bool         `yaml:"enable_tls,omitempty"`
+	TLSFile      string       `yaml:"tls_file,omitempty"`
 }
 
 // Validate ensures the most common fields inside the mgo.DialInfo portion of
@@ -65,8 +69,23 @@ func New(c *Config) (*mgo.Session, error) {
 	}
 
 	if c.EnableTLS {
+		// read pemfile data
+		pemData, err := ioutil.ReadFile(c.TLSFile)
+		if err != nil {
+			log.Panic(err)
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(pemData) {
+			log.Panic(errors.New("failed to parse root certificate"))
+		}
+		// set tls config
+		tlsConfig := &tls.Config{
+			RootCAs:            roots,
+			InsecureSkipVerify: true,
+		}
+
 		c.DialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
-			return tls.Dial("tcp", addr.String(), &tls.Config{})
+			return tls.Dial("tcp", addr.String(), tlsConfig)
 		}
 	}
 
